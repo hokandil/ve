@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 from app.services.kagent_service import kagent_service
 from app.services.agent_registry_service import agent_registry_service
+from app.core.cache import cache_response
 
 @router.get("/kagent/agents")
 async def list_kagent_agents():
@@ -37,6 +38,7 @@ async def list_registry_agents():
 
 
 @router.get("/ves", response_model=VirtualEmployeeListResponse)
+@cache_response(ttl=300, key_prefix="marketplace_ves")  # Cache for 5 minutes
 async def list_marketplace_ves(
     department: Optional[str] = None,
     seniority_level: Optional[SeniorityLevel] = None,

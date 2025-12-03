@@ -28,6 +28,10 @@ app = FastAPI(
 from app.core.telemetry import setup_telemetry
 setup_telemetry(app)
 
+# Setup Redis cache
+from app.core.cache import init_cache
+init_cache(settings.REDIS_URL)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
