@@ -278,14 +278,31 @@ class AgentGatewayConfigService:
             policy["spec"]["rbac"]["policy"]["matchExpressions"] = [cel_expr]
             policy["metadata"]["annotations"]["allowed_customers"] = json.dumps(existing_customers)
             
-            # Patch policy
+            # Use strategic merge patch to avoid race conditions
+            patch_body = {
+                "metadata": {
+                    "annotations": {
+                        "allowed_customers": json.dumps(existing_customers)
+                    }
+                },
+                "spec": {
+                    "rbac": {
+                        "policy": {
+                            "matchExpressions": [cel_expr]
+                        }
+                    }
+                }
+            }
+            
+            # Patch policy with merge patch for concurrent safety
             self.custom_api.patch_namespaced_custom_object(
                 group="gateway.kgateway.dev",
                 version="v1alpha1",
                 namespace=agent_namespace,
                 plural="trafficpolicies",
                 name=policy_name,
-                body=policy
+                body=patch_body,
+                _content_type='application/merge-patch+json'  # Forces merge patch
             )
             
             log_security_event(
@@ -379,13 +396,30 @@ class AgentGatewayConfigService:
                 policy["spec"]["rbac"]["policy"]["matchExpressions"] = ["request.headers['X-Customer-ID'] == 'deny-all-default'"]
                 policy["metadata"]["annotations"]["allowed_customers"] = "[]"
                 
+                # Use merge patch for concurrent safety
+                patch_body = {
+                    "metadata": {
+                        "annotations": {
+                            "allowed_customers": "[]"
+                        }
+                    },
+                    "spec": {
+                        "rbac": {
+                            "policy": {
+                                "matchExpressions": ["request.headers['X-Customer-ID'] == 'deny-all-default'"]
+                            }
+                        }
+                    }
+                }
+                
                 self.custom_api.patch_namespaced_custom_object(
                     group="gateway.kgateway.dev",
                     version="v1alpha1",
                     namespace=agent_namespace,
                     plural="trafficpolicies",
                     name=policy_name,
-                    body=policy
+                    body=patch_body,
+                    _content_type='application/merge-patch+json'
                 )
                 
                 log_security_event(
@@ -405,13 +439,30 @@ class AgentGatewayConfigService:
                 policy["spec"]["rbac"]["policy"]["matchExpressions"] = [cel_expr]
                 policy["metadata"]["annotations"]["allowed_customers"] = json.dumps(existing_customers)
                 
+                # Use merge patch for concurrent safety
+                patch_body = {
+                    "metadata": {
+                        "annotations": {
+                            "allowed_customers": json.dumps(existing_customers)
+                        }
+                    },
+                    "spec": {
+                        "rbac": {
+                            "policy": {
+                                "matchExpressions": [cel_expr]
+                            }
+                        }
+                    }
+                }
+                
                 self.custom_api.patch_namespaced_custom_object(
                     group="gateway.kgateway.dev",
                     version="v1alpha1",
                     namespace=agent_namespace,
                     plural="trafficpolicies",
                     name=policy_name,
-                    body=policy
+                    body=patch_body,
+                    _content_type='application/merge-patch+json'
                 )
                 
                 log_security_event(
@@ -469,6 +520,55 @@ class AgentGatewayConfigService:
         
         route_name = f"agent-{agent_type}"
         policy_name = f"rbac-{agent_type}"
+        
+        # DELETE PROTECTION: Check if customers still have access
+        try:
+            policy = self.custom_api.get_namespaced_custom_object(
+                group="gateway.kgateway.dev",
+                version="v1alpha1",
+                namespace=agent_namespace,
+                plural="trafficpolicies",
+                name=policy_name
+            )
+            
+            # Get allowed_customers list
+            annotations = policy.get("metadata", {}).get("annotations", {})
+            allowed_customers_str = annotations.get("allowed_customers", "[]")
+            
+            try:
+                allowed_customers = json.loads(allowed_customers_str)
+            except:
+                allowed_customers = []
+            
+            # PROTECTION: Fail if customers still have access
+            if len(allowed_customers) > 0:
+                log_security_event(
+                    event_type="route_delete_blocked",
+                    agent_type=agent_type,
+                    details={
+                        "reason": "Customers still have access",
+                        "allowed_customers_count": len(allowed_customers),
+                        "customers": allowed_customers
+                    },
+                    success=False
+                )
+                logger.error(
+                    f"Cannot delete route {route_name}: "
+                    f"{len(allowed_customers)} customers still have access"
+                )
+                raise Exception(
+                    f"Cannot delete agent {agent_type}: "
+                    f"{len(allowed_customers)} customers still have active access. "
+                    f"Revoke access first."
+                )
+            
+            logger.info(f"Delete protection check passed for {agent_type} (0 customers)")
+            
+        except ApiException as e:
+            if e.status != 404:
+                logger.error(f"Failed to check delete protection: {e}")
+                raise
+            # If policy doesn't exist (404), it's safe to delete the route
         
         # Delete TrafficPolicy first
         try:
