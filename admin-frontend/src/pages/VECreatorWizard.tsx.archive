@@ -1,0 +1,358 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, Save, Code } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent, Button } from '../components/ui';
+import Step1BasicInfo from '../components/ve-creator/Step1BasicInfo';
+import Step2Personality from '../components/ve-creator/Step2Personality';
+import Step3Capabilities from '../components/ve-creator/Step3Capabilities';
+import Step4Tools from '../components/ve-creator/Step4Tools';
+import Step5Pricing from '../components/ve-creator/Step5Pricing';
+import Step6Review from '../components/ve-creator/Step6Review';
+import { api } from '../services/api';
+
+export interface VEFormData {
+    // Step 1: Basic Info
+    name: string;
+    role: string;
+    department: string;
+    seniority: 'Junior' | 'Mid' | 'Senior' | 'Manager' | 'Director';
+    defaultPersonaName: string;
+    description: string;
+
+    // Step 2: Personality
+    roleDefinition: string;
+    backstory: string;
+    communicationStyle: string;
+    toneExamples: string[];
+
+    // Step 3: Capabilities
+    canDelegate: boolean;
+    delegationScope: string[];
+    autonomousBudget: number;
+    canApproveWork: boolean;
+    canReassignTasks: boolean;
+    requiresApproval: boolean;
+    specialCapabilities: string[];
+
+    // Step 4: Tools
+    builtInTools: string[];
+    mcpServers: Array<{ name: string; url: string; permissions: string[] }>;
+    customTools: string[];
+
+    // Step 5: Pricing
+    monthlyFee: number;
+    tokenBilling: 'customer_pays' | 'included';
+    estimatedUsage: 'light' | 'medium' | 'heavy';
+
+    // Step 6: Review
+    status: 'beta' | 'alpha' | 'stable';
+    deployToTest: boolean;
+    runTests: boolean;
+}
+
+const INITIAL_FORM_DATA: VEFormData = {
+    name: '',
+    role: '',
+    department: '',
+    seniority: 'Mid',
+    defaultPersonaName: '',
+    description: '',
+    roleDefinition: '',
+    backstory: '',
+    communicationStyle: 'professional-empathetic',
+    toneExamples: [],
+    canDelegate: false,
+    delegationScope: [],
+    autonomousBudget: 0,
+    canApproveWork: false,
+    canReassignTasks: false,
+    requiresApproval: false,
+    specialCapabilities: [],
+    builtInTools: [],
+    mcpServers: [],
+    customTools: [],
+    monthlyFee: 99,
+    tokenBilling: 'customer_pays',
+    estimatedUsage: 'medium',
+    status: 'beta',
+    deployToTest: true,
+    runTests: true,
+};
+
+const VECreatorWizard: React.FC = () => {
+    const navigate = useNavigate();
+    const [currentStep, setCurrentStep] = useState(1);
+    const [formData, setFormData] = useState<VEFormData>(INITIAL_FORM_DATA);
+    const [showYAML, setShowYAML] = useState(false);
+
+    const totalSteps = 6;
+
+    const updateFormData = (updates: Partial<VEFormData>) => {
+        setFormData(prev => ({ ...prev, ...updates }));
+    };
+
+    const nextStep = () => {
+        if (currentStep < totalSteps) {
+            setCurrentStep(prev => prev + 1);
+        }
+    };
+
+    const prevStep = () => {
+        if (currentStep > 1) {
+            setCurrentStep(prev => prev - 1);
+        }
+    };
+
+    const handleSaveDraft = () => {
+        // TODO: Save to backend as draft
+        console.log('Saving draft:', formData);
+        alert('Draft saved successfully!');
+    };
+
+    const handleSaveTemplate = async () => {
+        try {
+            await api.templates.create(formData);
+            alert('VE Template saved successfully!');
+            navigate('/templates');
+        } catch (error) {
+            console.error('Failed to save template:', error);
+            alert('Failed to save template');
+        }
+    };
+
+    const generateYAML = (): string => {
+        // Build tools array for KAgent
+        const tools = [];
+
+        // Add built-in tools as MCP servers
+        if (formData.builtInTools.length > 0) {
+            tools.push({
+                type: 'McpServer',
+                mcpServer: {
+                    apiGroup: 'kagent.dev',
+                    kind: 'RemoteMCPServer',
+                    name: 'kagent-tool-server'
+                },
+                toolNames: formData.builtInTools
+            });
+        }
+
+        // Add custom MCP servers
+        formData.mcpServers.forEach(server => {
+            tools.push({
+                type: 'McpServer',
+                mcpServer: {
+                    apiGroup: 'kagent.dev',
+                    kind: 'MCPServer',
+                    name: server.name
+                },
+                toolNames: server.permissions // Using permissions as tool names for now
+            });
+        });
+
+        // Build system message with personality and capabilities
+        const systemMessage = `You are ${formData.defaultPersonaName}, a ${formData.seniority} ${formData.role}.
+
+# Role & Responsibilities
+${formData.roleDefinition}
+
+# Background & Experience
+${formData.backstory}
+
+# Communication Style
+${formData.communicationStyle}
+${formData.toneExamples.length > 0 ? `\nExample tone:\n${formData.toneExamples.map(ex => `- "${ex}"`).join('\n')}` : ''}
+
+# Capabilities & Permissions
+${formData.canDelegate ? `- You CAN delegate tasks to: ${formData.delegationScope.join(', ')}` : '- You CANNOT delegate tasks'}
+${formData.autonomousBudget > 0 ? `- You can make autonomous decisions up to $${formData.autonomousBudget}` : ''}
+${formData.canApproveWork ? '- You can approve work from subordinates' : ''}
+${formData.canReassignTasks ? '- You can reassign tasks if quality is insufficient' : ''}
+${formData.requiresApproval ? '- You MUST get human approval for all actions' : ''}
+
+# Special Features
+${formData.specialCapabilities.map(cap => `- ${cap.replace(/_/g, ' ')}`).join('\n')}
+
+# Instructions
+- Always be helpful and professional
+- If a question is unclear, ask for clarification before taking action
+- Use available tools to accomplish tasks effectively
+- Format your responses in Markdown
+- Include a summary of actions taken and results
+
+# Response Format
+- ALWAYS format your response as Markdown
+- Your response will include a summary of actions you took and an explanation of the result
+- Be clear and concise in your communication`;
+
+        return `apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: ${formData.name.toLowerCase().replace(/\s+/g, '-')}
+  namespace: default
+  labels:
+    department: ${formData.department.toLowerCase().replace(/\s+/g, '-')}
+    seniority: ${formData.seniority.toLowerCase()}
+    pricing: "${formData.monthlyFee}"
+spec:
+  description: ${formData.description}
+  type: Declarative
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      ${systemMessage.split('\n').join('\n      ')}
+${tools.length > 0 ? `  tools:
+${tools.map(tool => `    - type: ${tool.type}
+      mcpServer:
+        apiGroup: ${tool.mcpServer.apiGroup}
+        kind: ${tool.mcpServer.kind}
+        name: ${tool.mcpServer.name}
+      toolNames:
+${tool.toolNames.map((tn: string) => `        - ${tn}`).join('\n')}`).join('\n')}` : '  # No tools configured'}
+
+# Pricing & Billing Configuration (Custom Annotations)
+# These are not part of the KAgent spec but can be used by your platform
+metadata:
+  annotations:
+    ve-platform.io/monthly-fee: "${formData.monthlyFee}"
+    ve-platform.io/token-billing: "${formData.tokenBilling}"
+    ve-platform.io/estimated-usage: "${formData.estimatedUsage}"
+    ve-platform.io/status: "${formData.status}"
+    ve-platform.io/persona-name: "${formData.defaultPersonaName}"`;
+    };
+
+    const renderStep = () => {
+        switch (currentStep) {
+            case 1:
+                return <Step1BasicInfo data={formData} updateData={updateFormData} />;
+            case 2:
+                return <Step2Personality data={formData} updateData={updateFormData} />;
+            case 3:
+                return <Step3Capabilities data={formData} updateData={updateFormData} />;
+            case 4:
+                return <Step4Tools data={formData} updateData={updateFormData} />;
+            case 5:
+                return <Step5Pricing data={formData} updateData={updateFormData} />;
+            case 6:
+                return <Step6Review data={formData} yaml={generateYAML()} />;
+            default:
+                return null;
+        }
+    };
+
+    const stepTitles = [
+        'Basic Information',
+        'Personality & Backstory',
+        'Capabilities',
+        'Tools & MCP Servers',
+        'Pricing',
+        'Review & Save'
+    ];
+
+    return (
+        <div className="min-h-screen bg-slate-50 p-8">
+            <div className="max-w-5xl mx-auto">
+                {/* Header */}
+                <div className="mb-8">
+                    <h1 className="text-3xl font-bold text-slate-900">Create New Virtual Employee</h1>
+                    <p className="text-slate-600 mt-2">
+                        Step {currentStep} of {totalSteps}: {stepTitles[currentStep - 1]}
+                    </p>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mb-8">
+                    <div className="flex items-center justify-between mb-2">
+                        {stepTitles.map((title, index) => (
+                            <div
+                                key={index}
+                                className={`flex-1 text-center ${index < stepTitles.length - 1 ? 'mr-2' : ''
+                                    }`}
+                            >
+                                <div
+                                    className={`h-2 rounded-full ${index + 1 <= currentStep
+                                        ? 'bg-indigo-600'
+                                        : 'bg-slate-200'
+                                        }`}
+                                />
+                                <p
+                                    className={`text-xs mt-1 ${index + 1 === currentStep
+                                        ? 'text-indigo-600 font-semibold'
+                                        : 'text-slate-500'
+                                        }`}
+                                >
+                                    {index + 1}. {title}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Step Content */}
+                <Card className="mb-6">
+                    <CardContent className="p-8">
+                        {renderStep()}
+                    </CardContent>
+                </Card>
+
+                {/* Navigation Buttons */}
+                <div className="flex items-center justify-between">
+                    <div className="flex gap-3">
+                        {currentStep > 1 && (
+                            <Button variant="outline" onClick={prevStep}>
+                                <ArrowLeft className="mr-2 h-4 w-4" />
+                                Back
+                            </Button>
+                        )}
+                    </div>
+
+                    <div className="flex gap-3">
+                        <Button variant="outline" onClick={handleSaveDraft}>
+                            <Save className="mr-2 h-4 w-4" />
+                            Save Draft
+                        </Button>
+
+                        {currentStep === totalSteps ? (
+                            <>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setShowYAML(!showYAML)}
+                                >
+                                    <Code className="mr-2 h-4 w-4" />
+                                    {showYAML ? 'Hide' : 'View'} YAML
+                                </Button>
+                                <Button onClick={handleSaveTemplate}>
+                                    Save Template
+                                </Button>
+                            </>
+                        ) : (
+                            <Button onClick={nextStep}>
+                                Next
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
+                        )}
+                    </div>
+                </div>
+
+                {/* YAML Preview Modal */}
+                {showYAML && currentStep === totalSteps && (
+                    <Card className="mt-6">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Code className="h-5 w-5" />
+                                Generated Configuration
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto text-sm font-mono">
+                                {generateYAML()}
+                            </pre>
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default VECreatorWizard;

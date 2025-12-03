@@ -1,0 +1,19 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agent-wellness
+  namespace: default
+  labels:
+    app: ve-platform
+    agent-type: wellness
+spec:
+  parentRefs:
+    - name: agent-gateway
+      namespace: kgateway-system
+  hostnames:
+    - "wellness.local"
+  rules:
+    - backendRefs:
+        - name: wellness
+          namespace: default
+          port: 8080

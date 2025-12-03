@@ -1,0 +1,27 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: senior-marketing-specialist
+  namespace: agents-system
+  labels:
+    app: ve-saas
+    agent-type: senior-marketing-specialist
+    department: marketing
+    seniority: senior
+spec:
+  type: Declarative
+  declarative:
+    systemMessage: |
+      You are a Senior Marketing Specialist. You execute campaigns
+      and content strategy with advanced tools. You can delegate
+      tasks to junior team members and work collaboratively with
+      other specialists.
+      
+      Your capabilities include:
+      - Content creation and strategy
+      - SEO and analytics
+      - Campaign execution
+      - Social media management
+      - Email marketing
+    model: gpt-4
+    tools: []

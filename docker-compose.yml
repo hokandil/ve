@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (Supabase uses PostgreSQL)
+  postgres:
+    image: supabase/postgres:15.1.0.117
+    container_name: ve-postgres
+    environment:
+      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./supabase/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - ve-network
+
+  # Redis for caching and queues
+  redis:
+    image: redis:7-alpine
+    container_name: ve-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - ve-network
+
+  # Backend API
+  backend:
+    build: ./backend
+    container_name: ve-backend
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres_password@postgres:5432/postgres
+      - REDIS_URL=redis://redis:6379
+      - SUPABASE_URL=http://localhost:8000
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - ve-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
+
+networks:
+  ve-network:
+    driver: bridge

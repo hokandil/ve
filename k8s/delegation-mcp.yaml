@@ -1,0 +1,19 @@
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: delegation-server
+  namespace: kagent
+spec:
+  type: stdio
+  image: ve-platform/delegation-mcp-server:latest
+  env:
+    - name: API_URL
+      value: "http://ve-backend.default.svc.cluster.local:8000/api"
+    - name: DELEGATION_AUTH_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: ve-platform-secrets
+          key: delegation-token
+  tools:
+    - name: delegate_to_agent
+      description: "Delegate a task to another agent in your team"
