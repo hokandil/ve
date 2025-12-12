@@ -158,7 +158,8 @@ class TestConcurrentAccessSafety:
         assert patch_call.kwargs.get("_content_type") == "application/merge-patch+json"
         
         # Verify patch body structure
-        patch_body = patch_call.args[6]  # body argument
+        patch_body = patch_call.kwargs.get("body")
+        assert patch_body is not None
         assert "metadata" in patch_body
         assert "spec" in patch_body
         assert "annotations" in patch_body["metadata"]
@@ -250,7 +251,7 @@ class TestConcurrentAccessSafety:
         )
         
         patch_call = mock_k8s_service.custom_api.patch_namespaced_custom_object.call_args
-        patch_body = patch_call.args[6]
+        patch_body = patch_call.kwargs.get("body")
         
         # Verify structure
         assert patch_body["metadata"]["annotations"]["allowed_customers"] == json.dumps(["new-customer"])

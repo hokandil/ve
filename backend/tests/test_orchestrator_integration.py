@@ -291,7 +291,7 @@ class TestGatewayAccessControl:
         
         # Verify patch was called with customer in list
         patch_call = service.custom_api.patch_namespaced_custom_object.call_args
-        patch_body = patch_call.args[6]
+        patch_body = patch_call.kwargs.get("body")
         allowed_customers = json.loads(patch_body["metadata"]["annotations"]["allowed_customers"])
         assert "customer-1" in allowed_customers
     
@@ -330,7 +330,7 @@ class TestGatewayAccessControl:
         
         # Verify patch was called with empty list
         patch_call = service.custom_api.patch_namespaced_custom_object.call_args
-        patch_body = patch_call.args[6]
+        patch_body = patch_call.kwargs.get("body")
         allowed_customers = json.loads(patch_body["metadata"]["annotations"]["allowed_customers"])
         assert "customer-1" not in allowed_customers
     

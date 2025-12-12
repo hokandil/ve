@@ -77,9 +77,16 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({ isOpen, onClose, t
 
     const onSubmit = async (data: TaskFormData) => {
         try {
+            // Clean up data before sending
+            const updates = {
+                ...data,
+                due_date: data.due_date === '' ? null : data.due_date,
+                assigned_to_ve: data.assigned_to_ve === '' ? null : data.assigned_to_ve
+            };
+
             await updateTask.mutateAsync({
                 id: task.id,
-                updates: data
+                updates: updates
             });
             addToast('success', 'Task updated successfully!');
             onClose();

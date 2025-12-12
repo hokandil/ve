@@ -7,6 +7,7 @@ import httpx
 import json
 from typing import Dict, Any, Optional, AsyncGenerator
 from app.core.config import settings
+from app.core.resilience import agent_gateway_breaker
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class AgentGatewayService:
         agents = await customer_agent_service.get_customer_agents(customer_id, current_agent_type)
         return customer_agent_service.format_agent_context(agents)
     
+    @agent_gateway_breaker
     async def invoke_agent_stream(
         self,
         customer_id: str,
@@ -184,10 +186,13 @@ class AgentGatewayService:
         except httpx.ConnectError as e:
             logger.error(f"Failed to connect to Agent Gateway: {e}")
             yield {"type": "error", "content": "Agent Gateway unavailable"}
+            raise e # Re-raise for circuit breaker
         except Exception as e:
             logger.error(f"Error streaming from agent: {e}")
             yield {"type": "error", "content": str(e)}
+            raise e # Re-raise for circuit breaker
     
+    @agent_gateway_breaker
     async def invoke_agent(
         self,
         customer_id: str,
@@ -371,3 +376,7 @@ class AgentGatewayService:
         return gateway_config.delete_agent_route(agent_type)
 
 agent_gateway_service = AgentGatewayService()
+
+def get_agent_gateway_service() -> AgentGatewayService:
+    """Get Agent Gateway service singleton"""
+    return agent_gateway_service

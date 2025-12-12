@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Save, X, Upload, Trash2, Globe, EyeOff } from 'lucide-react';
+import { Save, X, Globe, EyeOff } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, Button, Input, Badge } from '../components/ui';
 import { api } from '../services/api';
 
@@ -40,11 +40,7 @@ const MetadataEditor: React.FC = () => {
         seniority_level: 'junior'
     });
 
-    useEffect(() => {
-        loadAgent();
-    }, [veId]);
-
-    const loadAgent = async () => {
+    const loadAgent = React.useCallback(async () => {
         try {
             const response = await api.get(`/marketplace/ves/${veId}`);
             const agent = response.data;
@@ -70,7 +66,11 @@ const MetadataEditor: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [veId]);
+
+    useEffect(() => {
+        loadAgent();
+    }, [loadAgent]);
 
     const handleSave = async () => {
         setSaving(true);

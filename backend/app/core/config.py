@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     K8S_NAMESPACE_PREFIX: str = "customer-"
     
     # Agent Gateway
-    AGENT_GATEWAY_URL: str = "http://172.23.0.7:8080"
-    AGENT_GATEWAY_AUTH_TOKEN: str = "dev-token"
+    # Agent Gateway
+    AGENT_GATEWAY_URL: str = os.getenv("AGENT_GATEWAY_URL", "http://localhost:8080")
+    AGENT_GATEWAY_AUTH_TOKEN: str = os.getenv("AGENT_GATEWAY_AUTH_TOKEN", "dev-token")
     
     # LLM Providers (API-agnostic)
     GOOGLE_API_KEY: str = ""  # For Gemini embeddings and LLM
@@ -61,6 +62,14 @@ class Settings(BaseSettings):
     
     # Webhooks
     WEBHOOK_SECRET: str = "change-me-in-production"
+    
+    # Centrifugo
+    CENTRIFUGO_API_URL: str = "http://localhost:8000/api"
+    CENTRIFUGO_API_KEY: str = "centrifugo-api-key"
+
+    # Temporal
+    TEMPORAL_HOST: str = "localhost:7233"
+    TEMPORAL_NAMESPACE: str = "default"
     
     class Config:
         env_file = [".env", "../.env"]

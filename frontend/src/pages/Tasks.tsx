@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Plus } from 'lucide-react';
 import { useTasks, useUpdateTask, useDeleteTask } from '../services/taskAPI';
@@ -6,8 +6,11 @@ import { Button, Badge } from '../components/ui';
 import { PageLayout } from '../components/layout';
 import { TaskCreateModal } from '../components/tasks/TaskCreateModal';
 import { TaskEditModal } from '../components/tasks/TaskEditModal';
+import { TaskWorkspace } from '../components/workspace/TaskWorkspace';
 import { TaskCard } from '../components/tasks/TaskCard';
 import { useToast } from '../components/ui/Toast';
+import { supabase } from '../services/supabase';
+import { useQueryClient } from '@tanstack/react-query';
 
 const columns = [
     { id: 'pending', title: 'To Do' },
@@ -19,13 +22,47 @@ const columns = [
 const Tasks: React.FC = () => {
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [editingTask, setEditingTask] = useState<any>(null);
+    const [viewingTask, setViewingTask] = useState<any>(null);
     const { data: tasks = [], isLoading } = useTasks();
     const updateTask = useUpdateTask();
     const deleteTask = useDeleteTask();
     const { addToast } = useToast();
+    const queryClient = useQueryClient();
+
+    // Real-time task updates
+    useEffect(() => {
+        const channel = supabase
+            .channel('public:tasks')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'tasks',
+                },
+                (payload) => {
+                    console.log('Task update received:', payload);
+                    queryClient.invalidateQueries({ queryKey: ['tasks'] });
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [queryClient]);
 
     const tasksByStatus = columns.reduce((acc, column) => {
-        acc[column.id] = tasks.filter((task: any) => task.status === column.id);
+        if (column.id === 'in_progress') {
+            // Group 'planning' and 'waiting_for_input' into 'in_progress' column for now
+            acc[column.id] = tasks.filter((task: any) =>
+                task.status === 'in_progress' ||
+                task.status === 'planning' ||
+                task.status === 'waiting_for_input'
+            );
+        } else {
+            acc[column.id] = tasks.filter((task: any) => task.status === column.id);
+        }
         return acc;
     }, {} as Record<string, any[]>);
 
@@ -44,6 +81,10 @@ const Tasks: React.FC = () => {
 
     const handleEdit = (task: any) => {
         setEditingTask(task);
+    };
+
+    const handleView = (task: any) => {
+        setViewingTask(task);
     };
 
     const handleDelete = async (taskId: string) => {
@@ -100,6 +141,7 @@ const Tasks: React.FC = () => {
                                                             ref={provided.innerRef}
                                                             {...provided.draggableProps}
                                                             {...provided.dragHandleProps}
+                                                            onClick={() => handleView(task)}
                                                         >
                                                             <TaskCard
                                                                 task={task}
@@ -131,6 +173,13 @@ const Tasks: React.FC = () => {
                     isOpen={!!editingTask}
                     onClose={() => setEditingTask(null)}
                     task={editingTask}
+                />
+            )}
+
+            {viewingTask && (
+                <TaskWorkspace
+                    task={viewingTask}
+                    onClose={() => setViewingTask(null)}
                 />
             )}
         </PageLayout>

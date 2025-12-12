@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, X, Minimize2, Maximize2, Loader2 } from 'lucide-react';
 import { chatAPI } from '../services/api';
-import { Button } from './ui/button';
-import { Card } from './ui/card';
+import { Button } from './ui/Button';
+import { Card } from './ui/Card';
 
 interface ChatInterfaceProps {
     veId: string;
@@ -122,8 +122,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ veId, agentName, a
                     >
                         <div
                             className={`max-w-[80%] rounded-lg p-3 ${msg.from_type === 'customer'
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'bg-white border border-gray-200 text-gray-800 shadow-sm'
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-white border border-gray-200 text-gray-800 shadow-sm'
                                 }`}
                         >
                             <p className="text-sm whitespace-pre-wrap">{msg.content}</p>

@@ -1,0 +1,76 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: temporal-worker-hpa
+  namespace: ve-saas
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: temporal-worker
+  minReplicas: 3
+  maxReplicas: 20  # Increased for autonomous delegation
+  metrics:
+  # CPU-based scaling
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  # Memory-based scaling
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  # Custom metric: Active workflows
+  - type: Pods
+    pods:
+      metric:
+        name: temporal_active_workflows
+      target:
+        type: AverageValue
+        averageValue: "10"  # Scale when avg > 10 workflows per pod
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60  # Fast scale-up for delegation bursts
+      policies:
+      - type: Percent
+        value: 100  # Double pods
+        periodSeconds: 60
+      - type: Pods
+        value: 4  # Or add 4 pods
+        periodSeconds: 60
+      selectPolicy: Max  # Use the policy that scales faster
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Slow scale-down to avoid thrashing
+      policies:
+      - type: Percent
+        value: 50  # Halve pods
+        periodSeconds: 300
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: temporal-worker-pdb
+  namespace: ve-saas
+spec:
+  minAvailable: 2  # Always keep at least 2 workers running
+  selector:
+    matchLabels:
+      app: temporal-worker
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: temporal-worker-quota
+  namespace: ve-saas
+spec:
+  hard:
+    requests.cpu: "40"  # Max 40 CPUs for workers
+    requests.memory: "80Gi"  # Max 80GB memory
+    limits.cpu: "80"
+    limits.memory: "160Gi"
+    pods: "25"  # Max 25 worker pods

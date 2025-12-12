@@ -112,6 +112,21 @@ class TaskService(BaseService):
         except Exception as e:
             self._handle_error(e, "TaskService.add_comment")
 
+    async def get_comments(self, task_id: str, customer_id: str) -> List[Dict[str, Any]]:
+        """Get comments for a task"""
+        try:
+            result = (
+                self.supabase.table("task_comments")
+                .select("*")
+                .eq("task_id", task_id)
+                .eq("customer_id", customer_id)
+                .order("created_at", desc=False)
+                .execute()
+            )
+            return result.data
+        except Exception as e:
+            self._handle_error(e, "TaskService.get_comments")
+
     async def delete_task(self, task_id: str, customer_id: str) -> bool:
         """Delete a task"""
         try:
@@ -127,3 +142,97 @@ class TaskService(BaseService):
         except Exception as e:
             self._handle_error(e, "TaskService.delete_task")
             return False
+
+    async def provide_feedback(self, task_id: str, customer_id: str, feedback: str) -> bool:
+        """Provide user feedback to a running task workflow"""
+        
+        # 1. Add feedback as a comment
+        await self.add_comment(task_id, customer_id, feedback, "customer")
+        
+        # 2. Add feedback to task metadata (for persistence context)
+        response = self.supabase.table("tasks").select("metadata").eq("id", task_id).single().execute()
+        if response.data:
+            metadata = response.data.get("metadata") or {}
+            feedback_history = metadata.get("feedback_history", [])
+            feedback_history.append({
+                "message": feedback,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            metadata["feedback_history"] = feedback_history
+            
+            # Reset waiting status if currently waiting
+            update_data = {"metadata": metadata}
+            # Note: We let the workflow update the status back to 'in_progress', 
+            # but we canoptimistically set it to "processing_feedback" here if we wanted.
+            
+            self.supabase.table("tasks").update(update_data).eq("id", task_id).execute()
+            
+        # 3. Signal Temporal Workflow
+        try:
+            from app.core.temporal_client import get_temporal_client
+            client = await get_temporal_client()
+            connection = await client.get_service_client() # Verify connection
+            
+            # Send signal to the workflow
+            # Note: We need to know the workflow ID. Convention: f"intelligent-delegation-{task_id}"
+            workflow_id = f"intelligent-delegation-{task_id}"
+            
+            handle = client.get_workflow_handle(workflow_id)
+            await handle.signal("provide_feedback", feedback)
+            
+            return True
+        except Exception as e:
+            # If workflow not found or error, just log it. The comment is saved anyway.
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to signal workflow for task {task_id}: {e}")
+            return False
+
+    async def approve_plan(self, task_id: str, customer_id: str) -> bool:
+        """Approve the proposed execution plan for a task"""
+        
+        # 1. Update Plan Status in DB
+        # Find the latest draft plan
+        try:
+            plan_res = self.supabase.table("task_plans").select("id").eq("task_id", task_id).eq("status", "draft").order("created_at", desc=True).limit(1).execute()
+            
+            if plan_res.data:
+                plan_id = plan_res.data[0]["id"]
+                self.supabase.table("task_plans").update({"status": "approved"}).eq("id", plan_id).execute()
+                
+            # 2. Signal Workflow
+            from app.core.temporal_client import get_temporal_client
+            client = await get_temporal_client()
+            workflow_id = f"intelligent-delegation-{task_id}"
+            
+            handle = client.get_workflow_handle(workflow_id)
+            await handle.signal("approve_plan")
+            
+            return True
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to signal approve_plan for task {task_id}: {e}")
+            return False
+
+    async def get_task_plan(self, task_id: str, customer_id: str) -> Dict[str, Any]:
+        """Get the latest plan for a task"""
+        try:
+            # Check ownership via task
+            task_check = self.supabase.table("tasks").select("id").eq("id", task_id).eq("customer_id", customer_id).execute()
+            if not task_check.data:
+                return None
+                
+            # specific plan
+            result = (
+                self.supabase.table("task_plans")
+                .select("*")
+                .eq("task_id", task_id)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            return result.data[0] if result.data else None
+        except Exception as e:
+            self._handle_error(e, "TaskService.get_task_plan")

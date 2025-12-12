@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from typing import List, Optional
 from pydantic import BaseModel
@@ -183,49 +183,72 @@ async def mark_as_read(
 async def chat_with_ve(
     ve_id: str,
     message: MessageCreate,
+    background_tasks: BackgroundTasks,
     user = Depends(get_current_user)
 ):
     """
-    Chat with a VE - Streaming version.
-    Streams agent responses in real-time using Server-Sent Events (SSE).
+    Chat with a VE - Real-time version (Centrifugo).
+    Starts a background task that streams agent responses to a Centrifugo channel.
     """
     import logging
-    import json
-    from fastapi.responses import StreamingResponse
+    from app.core.centrifugo import get_centrifugo_client
     
     logger = logging.getLogger(__name__)
     
-    supabase = get_supabase_admin()
-    message_service = MessageService(supabase)
+    # Generate a channel name if not provided (e.g., chat:thread_id)
+    # If thread_id is new, we might need to generate it here or let service handle it.
+    # For simplicity, we'll use a user-specific channel or the provided thread_id.
+    thread_id = message.thread_id
+    if not thread_id:
+        import uuid
+        thread_id = str(uuid.uuid4())
+        
+    channel = f"chat:{thread_id}"
     
-    async def event_generator():
-        """Generate SSE events"""
+    async def stream_to_centrifugo(
+        customer_id: str,
+        ve_id: str,
+        subject: str,
+        content: str,
+        thread_id: str,
+        channel: str
+    ):
+        supabase = get_supabase_admin()
+        message_service = MessageService(supabase)
+        centrifugo = get_centrifugo_client()
+        
         try:
             async for event in message_service.send_message_stream(
-                customer_id=user["id"],
+                customer_id=customer_id,
                 to_ve_id=ve_id,
-                subject=message.subject or "Chat",
-                content=message.content,
-                thread_id=message.thread_id
+                subject=subject,
+                content=content,
+                thread_id=thread_id
             ):
-                # Format as SSE
-                event_data = json.dumps(event)
-                yield f"data: {event_data}\n\n"
+                # Publish event to Centrifugo
+                await centrifugo.publish(channel, event)
                 
         except Exception as e:
-            logger.error(f"Error in event generator: {e}", exc_info=True)
-            error_event = json.dumps({"type": "error", "content": str(e)})
-            yield f"data: {error_event}\n\n"
-    
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"  # Disable nginx buffering
-        }
+            logger.error(f"Background streaming error: {e}", exc_info=True)
+            await centrifugo.publish(channel, {"type": "error", "content": str(e)})
+
+    # Start background task
+    background_tasks.add_task(
+        stream_to_centrifugo,
+        customer_id=user["id"],
+        ve_id=ve_id,
+        subject=message.subject or "Chat",
+        content=message.content,
+        thread_id=thread_id,
+        channel=channel
     )
+    
+    return {
+        "status": "processing",
+        "thread_id": thread_id,
+        "channel": channel,
+        "message": "Agent is processing your request. Subscribe to the channel for updates."
+    }
 
 @router.get("/ves/{ve_id}/history")
 async def get_chat_history(

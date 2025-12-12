@@ -1,7 +1,11 @@
 import axios from 'axios';
 import { supabase } from './supabase';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+const API_URL = process.env.REACT_APP_API_URL;
+
+if (!API_URL) {
+    console.warn('REACT_APP_API_URL is missing. API calls will fail.');
+}
 
 // Create axios instance
 const api = axios.create({

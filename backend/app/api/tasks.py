@@ -307,12 +307,51 @@ async def add_comment(
     
     return result
 
+@router.get("/{task_id}/comments")
+async def get_task_comments(
+    task_id: str,
+    user = Depends(get_current_user)
+):
+    """Get all comments/results for a task"""
+    supabase = get_supabase_admin()
+    service = TaskService(supabase)
+    
+    return await service.get_comments(task_id, user["id"])
+
 @router.delete("/{task_id}", status_code=204)
 async def delete_task(
     task_id: str,
     user = Depends(get_current_user)
 ):
-    """Delete a task"""
+    """Delete a task and terminate associated workflows"""
+    # 1. Terminate associated Temporal workflows
+    try:
+        from app.core.temporal_client import get_temporal_client
+        client = await get_temporal_client()
+        
+        # List of potential workflow IDs to terminate
+        workflow_ids = [
+            f"orchestrator-{task_id}",
+            f"intelligent-delegation-{task_id}", 
+            f"direct-assignment-{task_id}"
+        ]
+        
+        for wf_id in workflow_ids:
+            try:
+                handle = client.get_workflow_handle(wf_id)
+                # Terminate running workflows
+                await handle.terminate(reason="Task deleted by user")
+            except Exception:
+                # Ignore errors (workflow might not exist or already be closed)
+                pass
+                
+    except Exception as e:
+        # Log error but proceed with DB deletion
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error terminating workflows for task {task_id}: {e}")
+
+    # 2. Delete from Database
     supabase = get_supabase_admin()
     service = TaskService(supabase)
     
@@ -325,3 +364,58 @@ async def delete_task(
         raise HTTPException(status_code=404, detail="Task not found")
     
     return None
+@router.post("/{task_id}/feedback")
+async def provide_task_feedback(
+    task_id: str,
+    feedback: CommentCreate,
+    user = Depends(get_current_user)
+):
+    """Provide feedback to a task (sends signal to workflow)"""
+    supabase = get_supabase_admin()
+    service = TaskService(supabase)
+    
+    # We use CommentCreate schema for simplicity as it has 'content' field
+    success = await service.provide_feedback(
+        task_id=task_id,
+        customer_id=user["id"],
+        feedback=feedback.content
+    )
+    
+    return {"success": success}
+
+@router.post("/{task_id}/plan/approve")
+async def approve_task_plan(
+    task_id: str,
+    user = Depends(get_current_user)
+):
+    """Approve the execution plan for a task"""
+    supabase = get_supabase_admin()
+    service = TaskService(supabase)
+    
+    success = await service.approve_plan(
+        task_id=task_id,
+        customer_id=user["id"]
+    )
+    
+    return {"success": success}
+
+@router.get("/{task_id}/plan")
+async def get_task_plan(
+    task_id: str,
+    user = Depends(get_current_user)
+):
+    """Get the latest plan for a task"""
+    supabase = get_supabase_admin()
+    service = TaskService(supabase)
+    
+    plan = await service.get_task_plan(
+        task_id=task_id,
+        customer_id=user["id"]
+    )
+    
+    if not plan:
+        # It's possible a task is in planning but the plan generation activity hasn't finished yet
+        # Return 404 nicely
+        raise HTTPException(status_code=404, detail="Plan not found")
+        
+    return plan

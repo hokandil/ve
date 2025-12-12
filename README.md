@@ -7,14 +7,37 @@
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.11+
+- Python 3.12+
 - Node.js 18+
+- Docker & Docker Compose
 - PostgreSQL (via Supabase)
-- Kubernetes cluster (for agent deployment)
+- Kubernetes cluster (for production deployment)
 
-### Local Development
+### Local Development with Temporal
 
-1. **Backend Setup**
+#### Option 1: Using Docker Compose (Recommended)
+
+```powershell
+# Start all services including Temporal
+.\start-temporal-dev.ps1
+```
+
+This starts:
+- PostgreSQL (port 5432)
+- Redis (port 6379)
+- Temporal Server (port 7233)
+- Temporal UI (port 8080)
+- Temporal Worker
+- Backend API (port 8000)
+
+#### Option 2: Manual Setup
+
+1. **Start Infrastructure**
+```bash
+docker-compose up -d postgres redis temporal temporal-ui
+```
+
+2. **Backend Setup**
 ```bash
 cd backend
 python -m venv venv
@@ -23,18 +46,31 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-2. **Frontend Setup**
+3. **Start Temporal Worker**
+```bash
+cd backend
+python -m app.temporal.worker
+```
+
+4. **Frontend Setup**
 ```bash
 cd frontend
 npm install
 npm run dev  # Runs on http://localhost:5173
 ```
 
-3. **Admin Frontend Setup**
+5. **Admin Frontend Setup**
 ```bash
 cd admin-frontend
 npm install
 npm run dev  # Runs on http://localhost:5174
+```
+
+### Test Temporal Workflow
+
+```powershell
+# Submit a test task and monitor execution
+.\test-temporal-workflow.ps1
 ```
 
 ### Environment Variables
@@ -43,7 +79,11 @@ Copy `.env.example` to `.env` and configure:
 - `SUPABASE_URL` - Your Supabase project URL
 - `SUPABASE_SERVICE_KEY` - Supabase service role key
 - `JWT_SECRET` - Secret for JWT token signing
-- `AGENT_GATEWAY_URL` - Agent Gateway endpoint (optional for local dev)
+- `TEMPORAL_HOST` - Temporal server address (default: localhost:7233)
+- `TEMPORAL_NAMESPACE` - Temporal namespace (default: default)
+- `AGENT_GATEWAY_URL` - Agent Gateway endpoint
+- `CENTRIFUGO_API_URL` - Centrifugo API endpoint
+- `CENTRIFUGO_API_KEY` - Centrifugo API key
 
 ---
 
@@ -67,7 +107,7 @@ Historical documentation moved to `docs/archive/`
 
 ## 🏗️ Architecture
 
-### Current Architecture (Shared Agent Runtime)
+### Current Architecture (Temporal + Shared Agent Runtime)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -75,6 +115,7 @@ Historical documentation moved to `docs/archive/`
 │  - Marketplace (hire agents)                            │
 │  - My Team (manage hired agents)                        │
 │  - Chat Interface (communicate with agents)             │
+│  - Real-time updates (Centrifugo)                       │
 └─────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
@@ -82,28 +123,51 @@ Historical documentation moved to `docs/archive/`
 │  - Authentication (Supabase Auth)                       │
 │  - Customer VE Management                               │
 │  - Context Enforcement Middleware ✅                    │
+│  - Temporal Client (workflow orchestration)             │
 └─────────────────────────────────────────────────────────┘
                           ↓
-┌─────────────────────────────────────────────────────────┐
-│  Agent Gateway (kgateway)                               │
-│  - Routes requests to agents                            │
-│  - Injects customer context                             │
-│  - JWT authentication                                   │
-└─────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────┐
-│  Shared Agent Runtime (KAgent)                          │
-│  - Agents deployed once in `agents-system` namespace    │
-│  - Context-based isolation (customer_id)                │
-│  - Scoped memory per customer ✅                        │
-│  - Multi-agent collaboration                            │
-└─────────────────────────────────────────────────────────┘
+        ┌─────────────────┴─────────────────┐
+        ↓                                   ↓
+┌──────────────────┐              ┌──────────────────┐
+│ Temporal Server  │              │ Agent Gateway    │
+│ - Workflows      │              │ (kgateway)       │
+│ - Activities     │              │ - RBAC           │
+│ - Durable State  │              │ - Routing        │
+└────────┬─────────┘              └────────┬─────────┘
+         ↓                                 ↓
+┌──────────────────┐              ┌──────────────────┐
+│ Temporal Worker  │──────────────→ KAgent Pods      │
+│ - Task Queue     │              │ - Manager        │
+│ - Retry Logic    │              │ - Senior         │
+│ - Escalation     │              │ - Junior         │
+└──────────────────┘              └──────────────────┘
+         ↓
+┌──────────────────┐
+│ Supabase DB      │
+│ - Tasks          │
+│ - Messages       │
+│ - Customer VEs   │
+└──────────────────┘
 ```
+
+**Key Components:**
+- ✅ **Temporal Orchestration** - Durable workflows with retry and escalation
+- ✅ **Agent Gateway** - Multi-tenant routing with RBAC
+- ✅ **Shared Agent Runtime** - Context-based isolation
+- ✅ **Real-time Updates** - Centrifugo WebSocket integration
+- ✅ **Observability** - OpenObserve metrics and traces
+
+**Workflow Types:**
+- `OrchestratorWorkflow` - Intelligent task routing with escalation
+- `DirectAssignmentWorkflow` - Direct task-to-VE assignment
+- `ContentCreationWorkflow` - Multi-agent content creation
+- `ProductLaunchCampaignWorkflow` - 30-day campaign orchestration
 
 **Key Security Features:**
 - ✅ Immutable `AgentContext` (Phase 1 complete)
 - ✅ Enforced memory scoping by customer
 - ✅ Context validation middleware
+- ✅ Agent Gateway RBAC with TrafficPolicy
 - ⏳ Database RLS (Phase 2)
 - ⏳ Runtime leakage detection (Phase 4)
 

@@ -336,3 +336,37 @@ class KnowledgeSearchResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+# LLM Output Schemas (for Instructor)
+class DelegationDecision(BaseModel):
+    """Structured output from LLM for delegation decisions"""
+    action: str = Field(..., description="Action to take: 'handle', 'delegate', or 'parallel'")
+    reasoning: str = Field(..., description="Explanation of why this decision was made")
+    target_agent: Optional[str] = Field(None, description="Single agent to delegate to (for 'delegate' action)")
+    target_agents: Optional[List[str]] = Field(None, description="Multiple agents for parallel execution")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score 0-1")
+    estimated_complexity: str = Field(..., description="Task complexity: 'low', 'medium', 'high'")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "action": "delegate",
+                "reasoning": "This task requires marketing expertise which the Marketing Manager specializes in",
+                "target_agent": "marketing-manager",
+                "target_agents": None,
+                "confidence": 0.9,
+                "estimated_complexity": "medium"
+            }
+        }
+
+class AgentAnalysis(BaseModel):
+    """Analysis of an agent's capabilities and suitability"""
+    agent_type: str
+    expertise_match: float = Field(..., ge=0.0, le=1.0)
+    workload_capacity: float = Field(..., ge=0.0, le=1.0)
+    reasoning: str
+
+class TaskDecomposition(BaseModel):
+    """Breakdown of a task into subtasks"""
+    subtasks: List[Dict[str, Any]]
+    parallel_execution: bool
+    estimated_duration: str

@@ -1,0 +1,65 @@
+# Temporal Server Deployment
+# Note: For production, use the official Temporal Helm chart
+# helm repo add temporalio https://go.temporal.io/helm-charts
+# helm install temporal temporalio/temporal --namespace temporal --create-namespace
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: temporal
+  labels:
+    name: temporal
+---
+# ConfigMap for Temporal configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-config
+  namespace: temporal
+data:
+  # Add custom Temporal configuration here
+  # See: https://docs.temporal.io/references/configuration
+---
+# Note: The actual Temporal Server deployment should use the Helm chart
+# This file serves as a reference for the namespace and basic configuration
+# 
+# To deploy Temporal Server:
+# 1. Add Temporal Helm repository:
+#    helm repo add temporalio https://go.temporal.io/helm-charts
+#    helm repo update
+#
+# 2. Create custom values file (temporal-values.yaml):
+#    server:
+#      replicaCount: 3
+#      resources:
+#        requests:
+#          cpu: 500m
+#          memory: 512Mi
+#        limits:
+#          cpu: 2000m
+#          memory: 2Gi
+#    
+#    cassandra:
+#      enabled: false
+#    
+#    postgresql:
+#      enabled: true
+#      postgresqlUsername: temporal
+#      postgresqlPassword: temporal
+#      postgresqlDatabase: temporal
+#    
+#    prometheus:
+#      enabled: true
+#    
+#    grafana:
+#      enabled: true
+#
+# 3. Install Temporal:
+#    helm install temporal temporalio/temporal \
+#      --namespace temporal \
+#      --create-namespace \
+#      -f temporal-values.yaml
+#
+# 4. Verify installation:
+#    kubectl get pods -n temporal
+#    kubectl get svc -n temporal

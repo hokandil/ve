@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Download, RefreshCw, Filter } from 'lucide-react';
+import { Search, Download, RefreshCw } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, Button, Input, Badge } from '../components/ui';
 import { discoveryAPI, Agent } from '../services/discoveryAPI';
 
@@ -16,6 +16,7 @@ const AgentBrowser: React.FC = () => {
 
     useEffect(() => {
         loadAgents();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, department]);
 
     const loadAgents = async () => {

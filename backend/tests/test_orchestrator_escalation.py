@@ -204,17 +204,15 @@ class TestRouteTaskToVE:
         from app.services.orchestrator import route_task_to_ve
         
         with patch('app.services.orchestrator.get_supabase_admin') as mock_supabase, \
-             patch('app.services.orchestrator.get_agent_gateway_service') as mock_gateway:
+             patch('app.worker.invoke_agent_worker') as mock_worker:
             
             # Mock database responses
             mock_supabase.return_value.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = [mock_ves[0]]
             mock_supabase.return_value.table.return_value.update.return_value.eq.return_value.execute.return_value = Mock()
             mock_supabase.return_value.table.return_value.insert.return_value.execute.return_value = Mock()
             
-            # Mock successful agent response
-            mock_gateway.return_value.invoke_agent = AsyncMock(return_value={
-                "message": "Task acknowledged"
-            })
+            # Mock successful task queueing
+            mock_worker.delay.return_value = Mock()
             
             result = await route_task_to_ve(
                 customer_id="test-customer",
@@ -231,6 +229,9 @@ class TestRouteTaskToVE:
             update_call_args = mock_supabase.return_value.table.return_value.update.call_args
             assert update_call_args[0][0]["status"] == "in_progress"
             assert update_call_args[0][0]["assigned_to_ve"] == "manager-1"
+            
+            # Verify worker was called
+            mock_worker.delay.assert_called_once()
     
     async def test_route_task_with_invalid_ve_id(self):
         """Test routing task to invalid VE returns False with error log"""
@@ -259,20 +260,18 @@ class TestRouteTaskToVE:
             assert "invalid-ve-id" in error_message
     
     async def test_route_task_agent_invocation_failure(self, mock_ves):
-        """Test that agent invocation failure marks task as failed"""
+        """Test that agent invocation queueing failure marks task as failed"""
         from app.services.orchestrator import route_task_to_ve
         
         with patch('app.services.orchestrator.get_supabase_admin') as mock_supabase, \
-             patch('app.services.orchestrator.get_agent_gateway_service') as mock_gateway:
+             patch('app.worker.invoke_agent_worker') as mock_worker:
             
             # Mock database responses
             mock_supabase.return_value.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = [mock_ves[0]]
             mock_supabase.return_value.table.return_value.update.return_value.eq.return_value.execute.return_value = Mock()
             
-            # Mock agent invocation failure
-            mock_gateway.return_value.invoke_agent = AsyncMock(
-                side_effect=Exception("Agent timeout")
-            )
+            # Mock queueing failure
+            mock_worker.delay.side_effect = Exception("Redis unavailable")
             
             result = await route_task_to_ve(
                 customer_id="test-customer",
@@ -290,6 +289,7 @@ class TestRouteTaskToVE:
             assert failed_update is not None
             assert "metadata" in failed_update
             assert "failure_reason" in failed_update["metadata"]
+            assert "Redis unavailable" in failed_update["metadata"]["failure_reason"]
     
     async def test_route_task_missing_agent_type(self, mock_ves):
         """Test that VE without agent_type returns False"""

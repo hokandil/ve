@@ -10,6 +10,11 @@ interface TaskCardProps {
         priority: string;
         due_date?: string;
         assigned_to_ve?: string;
+        status?: string;
+        metadata?: {
+            last_progress_message?: string;
+            last_progress_timestamp?: string;
+        };
     };
     isDragging?: boolean;
     onEdit?: (task: any) => void;
@@ -41,6 +46,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging, onEdit, on
                         </Badge>
                     </div>
                 </div>
+
+                {/* Progress Indicator */}
+                {task.status === 'in_progress' && task.metadata?.last_progress_message && (
+                    <div className="mb-2 text-xs bg-blue-50 text-blue-700 p-1.5 rounded border border-blue-100 flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+                        <span className="truncate">{task.metadata.last_progress_message}</span>
+                    </div>
+                )}
 
                 {/* Action Menu */}
                 <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">

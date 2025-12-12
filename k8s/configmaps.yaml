@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ve-config
+  namespace: ve-saas
+  labels:
+    app: ve-saas
+data:
+  # Temporal Configuration
+  temporal-host: "temporal-frontend.temporal:7233"
+  temporal-namespace: "ve-saas"
+  temporal-task-queue: "campaign-queue"
+  
+  # Agent Gateway Configuration
+  agent-gateway-url: "http://agent-gateway.ve-saas:8080"
+  
+  # Centrifugo Configuration
+  centrifugo-api-url: "http://centrifugo.ve-saas:8000/api"
+  centrifugo-ws-url: "ws://centrifugo.ve-saas:8000/connection/websocket"
+  
+  # OpenObserve Configuration
+  openobserve-url: "http://openobserve.observability:5080"
+  
+  # Application Configuration
+  environment: "production"
+  log-level: "INFO"
+  
+  # Feature Flags
+  enable-temporal: "true"
+  enable-observability: "true"
+  enable-realtime: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-config
+  namespace: temporal
+  labels:
+    app: temporal
+data:
+  # Temporal Server Configuration
+  num-history-shards: "512"
+  default-store: "postgres"
+  visibility-store: "postgres"
+  
+  # PostgreSQL Configuration
+  postgres-host: "postgres.ve-saas:5432"
+  postgres-database: "temporal"
+  
+  # Metrics Configuration
+  prometheus-enabled: "true"
+  prometheus-port: "9090"
